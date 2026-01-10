@@ -9,6 +9,9 @@ INSTALLED_APPS += [
     'django_extensions',
 ]
 
+# Static files - serve in development
+STATICFILES_DIRS = []
+
 # Disable caching in development
 CACHES = {
     'default': {

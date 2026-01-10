@@ -24,6 +24,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'channels',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',  # for Swagger UI static files
     
     # Local apps
     'apps.core',
@@ -99,6 +101,10 @@ USE_TZ = True
 # Static files
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_FINDERS = [
+    'django.contrib.staticfiles.finders.FileSystemFinder',
+    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
+]
 
 # Media files
 MEDIA_URL = 'media/'
@@ -106,16 +112,26 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Custom User Model 
+AUTH_USER_MODEL = 'authentication.User'
+
+# Authentication Backends
+AUTHENTICATION_BACKENDS = [
+    'apps.authentication.backends.EmailBackend',  # Custom email backend
+    'django.contrib.auth.backends.ModelBackend',  # Fallback to default
+]
+
 # REST Framework
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'apps.authentication.authentication.JWTAuthentication',  # Our custom JWT auth
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 # CORS
@@ -165,3 +181,28 @@ JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', SECRET_KEY)
 JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', '30'))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv('REFRESH_TOKEN_EXPIRE_DAYS', '7'))
+
+# MCP Server Configuration
+MCP_SERVER_ENABLED = os.getenv('MCP_SERVER_ENABLED', 'True') == 'True'
+MCP_SERVER_HOST = os.getenv('MCP_SERVER_HOST', 'localhost')
+MCP_SERVER_PORT = int(os.getenv('MCP_SERVER_PORT', '5000'))
+
+# DRF Spectacular (API Documentation)
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Archon AI Agent API',
+    'DESCRIPTION': 'API documentation for Archon AI Agent system with LangGraph, Memory, Planning, and Context Management',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX': '/api/',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+        'displayOperationId': True,
+        'filter': True,
+    },
+    'SWAGGER_UI_DIST': 'SIDECAR',
+    'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
+    'REDOC_DIST': 'SIDECAR',
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
+}
