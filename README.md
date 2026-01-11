@@ -129,7 +129,7 @@ backend/
    CELERY_BROKER_URL=redis://localhost:6379/0
    CELERY_RESULT_BACKEND=redis://localhost:6379/0
    
-   # Supabase (optional)
+   # Supabase
    SUPABASE_URL=your-supabase-url
    SUPABASE_KEY=your-supabase-anon-key
    SUPABASE_SERVICE_KEY=your-supabase-service-key
@@ -207,6 +207,22 @@ celery -A celery_app beat --loglevel=info
 | PUT | `/api/projects/{id}/` | Update project |
 | DELETE | `/api/projects/{id}/` | Delete project |
 
+### Chat
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/chat/sessions/` | List chat sessions |
+| POST | `/api/chat/sessions/` | Create new chat session |
+| GET | `/api/chat/sessions/{id}/` | Get session details |
+| DELETE | `/api/chat/sessions/{id}/` | Delete session |
+| POST | `/api/chat/send/` | Send message and get AI response |
+| GET | `/api/chat/sessions/{id}/messages/` | Get messages for a session |
+| POST | `/api/chat/sessions/{id}/clear/` | Clear all messages in session |
+| POST | `/api/chat/sessions/{id}/end/` | End a chat session |
+| POST | `/api/chat/sessions/{id}/regenerate/` | Regenerate last AI response |
+| GET | `/api/chat/messages/` | List all messages |
+| POST | `/api/chat/messages/` | Create message manually |
+| GET | `/api/chat/messages/{id}/` | Get message details |
+
 ### Agent Sessions
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -253,22 +269,7 @@ celery -A celery_app beat --loglevel=info
 
 ## 🔄 WebSocket Endpoints
 
-### Chat Consumer
-```
-ws://localhost:8000/ws/chat/{project_id}/
-```
-Real-time chat with the AI agent, supporting:
-- Message processing
-- Status updates
-- Planner updates
-- Executor updates
-- Input requests
-
-### Agent Consumer
-```
-ws://localhost:8000/ws/agent/{session_id}/
-```
-Stream agent execution updates for a specific session.
+WebSocket connections are handled via Django Channels (ASGI). These endpoints are **not** shown in Swagger as they use the WebSocket protocol, not HTTP.
 
 ## 🧠 Memory System
 
@@ -344,8 +345,6 @@ volumes:
   postgres_data:
 ```
 
-
-
 ## 📊 Code Quality
 
 ```bash
@@ -359,8 +358,6 @@ isort .
 flake8
 ```
 
-
-
 ## 🔐 Security
 
 - JWT-based authentication with access/refresh tokens
@@ -368,8 +365,6 @@ flake8
 - CORS configuration for frontend integration
 - Environment-based secrets management
 - Request logging middleware
-
-
 
 ## 🙏 Acknowledgments
 

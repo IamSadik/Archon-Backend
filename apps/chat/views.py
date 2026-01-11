@@ -6,6 +6,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
+from drf_spectacular.types import OpenApiTypes
 from apps.chat.models import ChatSession, ChatMessage
 from apps.chat.serializers import (
     ChatSessionSerializer,
@@ -15,11 +17,34 @@ from apps.chat.serializers import (
     ChatMessageCreateSerializer,
     SendMessageSerializer,
     ConversationHistorySerializer,
+    ChatResponseSerializer,
 )
 from apps.chat.services import ChatService
 from apps.projects.models import Project
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List chat sessions",
+        description="Get all chat sessions for the authenticated user. Can filter by project and active status.",
+        parameters=[
+            OpenApiParameter(name='project', type=OpenApiTypes.UUID, description='Filter by project ID'),
+            OpenApiParameter(name='is_active', type=OpenApiTypes.BOOL, description='Filter by active status'),
+        ]
+    ),
+    retrieve=extend_schema(
+        summary="Get chat session details",
+        description="Get detailed information about a specific chat session including messages."
+    ),
+    create=extend_schema(
+        summary="Create chat session",
+        description="Create a new chat session, optionally linked to a project."
+    ),
+    destroy=extend_schema(
+        summary="Delete chat session",
+        description="Delete a chat session and all its messages."
+    ),
+)
 class ChatSessionViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing chat sessions.
@@ -77,6 +102,12 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED
         )
     
+    @extend_schema(
+        summary="Send message",
+        description="Send a message to the AI and get a response. Creates a new session if one doesn't exist.",
+        request=SendMessageSerializer,
+        responses={200: ChatResponseSerializer}
+    )
     @action(detail=False, methods=['post'])
     def send_message(self, request):
         """
@@ -129,6 +160,15 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
+    @extend_schema(
+        summary="Get session messages",
+        description="Get paginated messages for a specific chat session.",
+        parameters=[
+            OpenApiParameter(name='limit', type=OpenApiTypes.INT, description='Number of messages to return (default: 50)'),
+            OpenApiParameter(name='before_id', type=OpenApiTypes.UUID, description='Get messages before this message ID'),
+        ],
+        responses={200: ChatMessageSerializer(many=True)}
+    )
     @action(detail=True, methods=['get'])
     def messages(self, request, pk=None):
         """
@@ -154,6 +194,10 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         serializer = ChatMessageSerializer(messages, many=True)
         return Response(serializer.data)
     
+    @extend_schema(
+        summary="Clear session messages",
+        description="Delete all messages in a chat session while keeping the session."
+    )
     @action(detail=True, methods=['post'])
     def clear(self, request, pk=None):
         """
@@ -166,6 +210,11 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
         
         return Response({'status': 'cleared'}, status=status.HTTP_200_OK)
     
+    @extend_schema(
+        summary="End chat session",
+        description="Mark a chat session as inactive/ended.",
+        responses={200: ChatSessionSerializer}
+    )
     @action(detail=True, methods=['post'])
     def end(self, request, pk=None):
         """
@@ -181,6 +230,11 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK
         )
     
+    @extend_schema(
+        summary="Regenerate response",
+        description="Regenerate the last AI assistant response in the session.",
+        responses={200: ChatResponseSerializer}
+    )
     @action(detail=True, methods=['post'])
     def regenerate(self, request, pk=None):
         """
@@ -214,6 +268,24 @@ class ChatSessionViewSet(viewsets.ModelViewSet):
             )
 
 
+@extend_schema_view(
+    list=extend_schema(
+        summary="List chat messages",
+        description="Get all messages across sessions. Can filter by session and role.",
+        parameters=[
+            OpenApiParameter(name='session', type=OpenApiTypes.UUID, description='Filter by session ID'),
+            OpenApiParameter(name='role', type=OpenApiTypes.STR, description='Filter by role (user, assistant, system)'),
+        ]
+    ),
+    retrieve=extend_schema(
+        summary="Get message details",
+        description="Get detailed information about a specific message."
+    ),
+    create=extend_schema(
+        summary="Create message",
+        description="Manually create a message in a session (not through AI chat)."
+    ),
+)
 class ChatMessageViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing chat messages.
