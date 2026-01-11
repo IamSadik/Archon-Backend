@@ -6,14 +6,14 @@ from typing import List
 class GeminiProvider(BaseLLMProvider):
     """Google Gemini LLM provider."""
     
-    def __init__(self, api_key: str, model: str = "gemini-pro"):
+    def __init__(self, api_key: str, model: str = "gemini-3-flash-preview"):
         super().__init__(api_key, model)
         self.llm = ChatGoogleGenerativeAI(
             model=model,
             google_api_key=api_key
         )
         self.embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/embedding-001",
+            model="models/text-embedding-004",
             google_api_key=api_key
         )
     

@@ -1,31 +1,18 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from .models import UserProfile
 
 User = get_user_model()
 
 
-class UserProfileSerializer(serializers.ModelSerializer):
-    """Serializer for UserProfile."""
-    class Meta:
-        model = UserProfile
-        fields = [
-            'preferred_language', 'preferred_framework', 'code_style',
-            'agent_autonomy_level', 'max_context_tokens', 
-            'enable_memory', 'enable_planning', 'email_notifications'
-        ]
-
-
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for User model."""
-    profile = UserProfileSerializer(read_only=True)
     
     class Meta:
         model = User
         fields = [
             'id', 'email', 'username', 'full_name', 'avatar_url',
-            'preferred_llm', 'date_joined', 'profile'
+            'preferred_llm', 'date_joined'
         ]
         read_only_fields = ['id', 'date_joined']
 
@@ -99,26 +86,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class UpdateProfileSerializer(serializers.ModelSerializer):
     """Serializer for updating user profile."""
-    profile = UserProfileSerializer(required=False)
     
     class Meta:
         model = User
-        fields = ['full_name', 'avatar_url', 'preferred_llm', 'profile']
-    
-    def update(self, instance, validated_data):
-        """Update user and profile."""
-        profile_data = validated_data.pop('profile', None)
-        
-        # Update user fields
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-        
-        # Update profile fields
-        if profile_data and hasattr(instance, 'profile'):
-            profile = instance.profile
-            for attr, value in profile_data.items():
-                setattr(profile, attr, value)
-            profile.save()
-        
-        return instance
+        fields = ['full_name', 'avatar_url', 'preferred_llm']
