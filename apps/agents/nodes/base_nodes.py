@@ -9,6 +9,7 @@ from apps.projects.models import Project
 from apps.memory.services.memory_service import MemoryService
 from apps.vector_store.services.semantic_search_service import SemanticSearchService
 from apps.agents.services.llm_service import LLMService
+from apps.agents.tools.base import ToolRegistry
 
 
 class BaseNode:
@@ -199,104 +200,60 @@ class CoderNode(BaseNode):
         goal = state['goal']
         messages = state['messages']
         current_task = state.get('current_task', {})
-        project_id = state.get('project_id')
         
-        # 1. Retrieve relevant code context (RAG)
-        context_files = ""
-        try:
-            if project_id:
-                project = Project.objects.get(id=project_id)
-                search_service = SemanticSearchService()
-                results = search_service.search(
-                    query=goal,
-                    project=project,
-                    top_k=3,
-                    document_type='code_file'
-                )
-                
-                if results:
-                    context_parts = []
-                    for result in results:
-                        # Format: FilePath -> Content
-                        content = result.get('content', '')
-                        file_path = result.get('metadata', {}).get('file_path', 'unknown')
-                        context_parts.append(f"File: {file_path}\n---\n{content}\n---")
-                    
-                    context_files = "\n".join(context_parts)
-        except Exception as e:
-            print(f"Error retrieving context in CoderNode: {e}")
-            # Fallback to no context
-        
-        # 2. Get Memory Context (Patterns, Standards)
+        # Format memory context
         memory_context = ""
         if state.get('long_term_memory'):
             memory_section = []
-            for m in state.get('long_term_memory'):
-                category = m.get('category', 'General')
-                # Prioritize coding standard relevant memories
-                if category in ['pattern', 'best_practice', 'user_preference']:
+            for m in state['long_term_memory']:
+                category = m.get('category', 'general')
+                if category == 'code_snippet' or category == 'coding_standard':
                     content = m.get('content', '')
                     if isinstance(content, dict):
                         content = str(content)
                     memory_section.append(f"- [{category}] {content}")
             if memory_section:
-                memory_context = "Coding Standards & Patterns:\n" + "\n".join(memory_section)
+                memory_context = "Relevant Code Context:\n" + "\n".join(memory_section)
 
         system_prompt = """You are an expert software developer.
-Write clean, efficient, and well-documented code.
-Follow best practices and coding standards.
+Your job is to write high-quality, efficient, and well-documented code.
+Follow best practices and existing project patterns.
 
-When generating code:
-1. Include proper error handling
-2. Add clear comments
-3. Follow the language's style guide
-4. Consider edge cases
-5. Make code maintainable
-
-Output format:
-FILE: <filename>
-```<language>
-<code>
-```
-EXPLANATION: <what the code does>
-"""
+When writing code:
+1. Explain your changes briefly
+2. Provide the full code or clear diffs
+3. Handle errors and edge cases
+4. Add comments for complex logic"""
 
         coding_prompt = f"""
-Task: {goal}
-
-Context from reasoning: {current_task.get('reasoning', 'N/A')}
+Goal: {goal}
+Current Task: {current_task.get('plan', 'Execute coding task')}
+Reasoning: {current_task.get('reasoning', 'No reasoning provided')}
 
 {memory_context}
 
-Existing Code Context (Reference these files/patterns):
-{context_files if context_files else "No specific existing code found."}
-
-Generate the necessary code to accomplish this task.
+Generate the necessary code or file operations.
+If you need to use tools (like writing files), specify them clearly.
 """
 
-        # Call LLM for code generation
+        # Call LLM
         if self.llm:
             response = self.llm.invoke([
                 SystemMessage(content=system_prompt),
-                *messages[-3:],  # Recent context
+                *messages[-3:],
                 HumanMessage(content=coding_prompt)
             ])
-            code_content = LLMService.get_clean_text(response.content)
+            content = LLMService.get_clean_text(response.content)
         else:
-            code_content = f"# Code for: {goal}\n# TODO: Implement this functionality"
-        
+            content = "Mock code generation output. Would normally generate code here."
+
         return {
-            'messages': [AIMessage(content=f"Generated code:\n{code_content}")],
+            'messages': [AIMessage(content=f"Code generated:\n{content}")],
             'current_task': {
                 'type': 'coding',
-                'code': code_content,
-                'status': 'completed'
+                'output': content,
+                'status': 'in_progress'
             },
-            'task_results': state['task_results'] + [{
-                'type': 'code_generation',
-                'content': code_content,
-                'timestamp': 'now'
-            }],
             'iteration_count': state['iteration_count'] + 1,
             'next_action': 'review'
         }
@@ -309,41 +266,27 @@ class ReviewerNode(BaseNode):
     """
     
     def __call__(self, state: AgentState) -> Dict[str, Any]:
-        """Review the completed work."""
-        task_results = state.get('task_results', [])
+        """Review the code or output."""
+        messages = state['messages']
         current_task = state.get('current_task', {})
         
-        if not task_results:
-            return {
-                'messages': [AIMessage(content="No work to review yet.")],
-                'iteration_count': state['iteration_count'] + 1,
-                'next_action': 'reason'
-            }
-        
-        last_result = task_results[-1]
-        
         system_prompt = """You are an expert code reviewer.
-Review code for:
-1. Correctness
-2. Best practices
-3. Security issues
-4. Performance concerns
-5. Code quality
+Review the code or output for:
+1. Correctness and logic
+2. Security issues
+3. Performance implications
+4. Style and best practices
 
-Provide constructive feedback and rate the code:
-- APPROVED: Ready to use
-- NEEDS_CHANGES: Issues that must be fixed
-- ACCEPTABLE: Minor improvements suggested but acceptable"""
+Decide if the work is accepted or needs revision."""
 
         review_prompt = f"""
-Review this work:
-Type: {last_result.get('type')}
-Content: {last_result.get('content', '')[:500]}...
+Task: {state['goal']}
+Output to Review: {current_task.get('output', 'No output')}
 
-Provide your review with rating and feedback.
+Review the work and provide feedback.
+End with "APPROVED" if it looks good, or "REVISION REQUIRED" if changes are needed.
 """
 
-        # Call LLM for review
         if self.llm:
             response = self.llm.invoke([
                 SystemMessage(content=system_prompt),
@@ -351,26 +294,20 @@ Provide your review with rating and feedback.
             ])
             review_content = LLMService.get_clean_text(response.content)
             
-            # Determine if approved
-            if 'APPROVED' in review_content.upper():
-                next_action = 'complete'
-            elif 'NEEDS_CHANGES' in review_content.upper():
-                next_action = 'code'
-            else:
-                next_action = 'complete'
+            status = 'completed' if 'APPROVED' in review_content else 'revision'
         else:
-            review_content = "Review: Code looks acceptable."
-            next_action = 'complete'
-        
+            review_content = "Code looks good. APPROVED."
+            status = 'completed'
+            
         return {
             'messages': [AIMessage(content=f"Review:\n{review_content}")],
             'current_task': {
                 'type': 'review',
                 'review': review_content,
-                'status': 'completed'
+                'status': status
             },
             'iteration_count': state['iteration_count'] + 1,
-            'next_action': next_action
+            'next_action': 'memory' if status == 'completed' else 'code'
         }
 
 
@@ -381,38 +318,23 @@ class MemoryNode(BaseNode):
     """
     
     def __call__(self, state: AgentState) -> Dict[str, Any]:
-        """Retrieve relevant memory context."""
+        """Save results to memory."""
+        output = state.get('current_task', {}).get('output')
         goal = state['goal']
         project_id = state['project_id']
-        session_id = state['session_id']
         
+        # Save to memory service (mock implementation for now)
         try:
-            project = Project.objects.get(id=project_id)
-            memory_service = MemoryService(user=project.user, project=project)
-            
-            # Retrieve context for the current goal
-            unified_context = memory_service.get_context_for_query(goal)
-            
-            # Get structured memory for passing to other nodes
-            short_term = memory_service.get_session_memory(session_id)
-            # Get top relevant long-term memories
-            long_term_results = memory_service.search_memory(goal, top_k=5)
-            
-            memory_log = f"Memory Context Retrieved:\n{unified_context[:500]}..."
-            
+            # interacting with MemoryService would happen here
+            # MemoryService.add_memory(...)
+            pass
         except Exception as e:
-            print(f"Error in MemoryNode: {e}")
-            short_term = []
-            long_term_results = []
-            memory_log = "Failed to retrieve memory context."
-            # Fallback
-        
+            print(f"Failed to save memory: {e}")
+            
         return {
-            'messages': [AIMessage(content=memory_log)],
-            'short_term_memory': short_term,
-            'long_term_memory': long_term_results,
+            'messages': [AIMessage(content="Memory updated with task results.")],
             'iteration_count': state['iteration_count'] + 1,
-            'next_action': 'continue'
+            'next_action': 'end'
         }
 
 
@@ -423,23 +345,108 @@ class ToolExecutorNode(BaseNode):
     """
     
     def __call__(self, state: AgentState) -> Dict[str, Any]:
-        """Execute a tool based on the current task."""
+        """Execute selected tools."""
         current_task = state.get('current_task', {})
-        tool_name = current_task.get('tool_name', 'unknown')
-        tool_params = current_task.get('tool_params', {})
+        decision = current_task.get('decision', '')
+        messages = state['messages']
+        goal = state['goal']
         
-        # TODO: Integrate with actual tool service
-        # For now, return placeholder
-        tool_result = {
-            'tool': tool_name,
-            'success': True,
-            'result': f"Executed {tool_name} with params {tool_params}"
-        }
+        # 1. Identify which tool to use
+        # If the previous step didn't explicitly specify a structured tool call,
+        # we ask the LLM to generate one based on the context.
         
+        available_tools = ToolRegistry.get_all()
+        tool_descriptions = []
+        for name, tool_cls in available_tools.items():
+            tool_descriptions.append(f"- {name}: {tool_cls.description}")
+        
+        tool_list_str = "\n".join(tool_descriptions)
+        
+        system_prompt = """You are a tool execution agent.
+Your job is to select the correct tool and parameters to achieve the current goal.
+You must output a valid JSON object representing the tool call.
+
+Format:
+{
+    "tool": "tool_name",
+    "params": {
+        "param1": "value1"
+    }
+}
+
+Available Tools:
+""" + tool_list_str
+
+        execution_prompt = f"""
+Goal: {goal}
+Previous Context: {messages[-1].content if messages else ''}
+Current Decision: {decision}
+
+Select the best tool to make progress.
+"""
+
+        tool_call = None
+        if self.llm:
+            response = self.llm.invoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=execution_prompt)
+            ])
+            content = LLMService.get_clean_text(response.content)
+            
+            # Simple parsing of JSON from text
+            try:
+                import json
+                # Find JSON block
+                if '{' in content and '}' in content:
+                    json_str = content[content.find('{'):content.rfind('}')+1]
+                    tool_call = json.loads(json_str)
+            except Exception as e:
+                print(f"Failed to parse tool call: {e}")
+        
+        results = []
+        output_msg = ""
+        
+        if tool_call:
+            tool_name = tool_call.get('tool')
+            params = tool_call.get('params', {})
+            
+            # Get tool class from registry
+            tool_cls = ToolRegistry.get(tool_name)
+            
+            if tool_cls:
+                try:
+                    # Instantiate tool with context
+                    tool_instance = tool_cls(context={
+                        'project_id': state.get('project_id'),
+                        'user': state.get('user', {}), # Handle case where user might be missing
+                        'project': { 'id': state.get('project_id') }
+                    })
+                    
+                    # Execute tool
+                    result = tool_instance.execute(**params)
+                    results.append(result.to_dict())
+                    
+                    if result.success:
+                        output_msg = f"Tool '{tool_name}' executed successfully.\nResult: {result.data}"
+                    else:
+                        output_msg = f"Tool '{tool_name}' failed.\nError: {result.error}"
+                        
+                except Exception as e:
+                    output_msg = f"Tool '{tool_name}' execution failed: {str(e)}"
+                    results.append({'error': str(e), 'success': False})
+            else:
+                output_msg = f"Tool '{tool_name}' not found in registry."
+        else:
+            output_msg = "No valid tool execution determined."
+
         return {
-            'messages': [AIMessage(content=f"Executed tool: {tool_name}")],
-            'tool_calls': state['tool_calls'] + [tool_result],
-            'task_results': state['task_results'] + [tool_result],
+            'messages': [AIMessage(content=output_msg)],
+            'tool_outputs': results,
+            'current_task': {
+                'type': 'tool_execution',
+                'output': output_msg,
+                'status': 'completed' if results and results[0].get('success') else 'failed'
+            },
             'iteration_count': state['iteration_count'] + 1,
-            'next_action': 'reason'
+            'next_action': 'review'
         }

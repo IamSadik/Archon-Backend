@@ -22,7 +22,7 @@ langchain-anthropic>=0.0.1
 langchain-community>=0.0.10
 
 # Vector Store & Embeddings
-pinecone-client>=3.0.0
+pinecone>=5.0.0
 sentence-transformers>=2.2.0
 
 # Document Processing
@@ -64,6 +64,7 @@ djangorestframework-simplejwt>=5.3.1
 django-filter>=23.5
 django-environ>=0.11.2
 drf-spectacular>=0.27.0
+drf-spectacular-sidecar>=2024.1.1
 
 # WebSocket Support
 websockets>=12.0

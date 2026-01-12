@@ -140,8 +140,8 @@ class MemoryService:
             {
                 'key': m.memory_key,
                 'content': m.content,
-                'type': m.memory_type,
-                'created_at': m.created_at.isoformat()
+                'created_at': m.created_at.isoformat(),
+                'type': m.memory_type
             }
             for m in memories
         ]
@@ -396,7 +396,7 @@ class MemoryService:
     
     def search_memory(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
-        Search memory using semantic similarity.
+        Search long-term memory (vectors).
         
         Args:
             query: Search query
@@ -406,67 +406,35 @@ class MemoryService:
             List of relevant memories
         """
         if not self.project:
-            return []
-        
-        try:
-            search_service = self._get_search_service()
-            results = search_service.search(
-                query=query,
-                project=self.project,
-                top_k=top_k,
-                document_type='memory',
-                log_search=False
-            )
+            raise ValueError("Project is required for memory search")
             
-            return results
-        except Exception:
-            return []
-    
-    def get_context_for_query(self, query: str, max_tokens: int = 2000) -> str:
+        search_service = self._get_search_service()
+        return search_service.search(
+            query=query,
+            project=self.project,
+            top_k=top_k,
+            document_type='memory',
+                log_search=False
+        )
+
+    def get_context_for_query(self, query: str) -> str:
         """
-        Get relevant memory context for a query.
+        Get unified context for a query suitable for LLM injection.
         
         Args:
-            query: Query to find context for
-            max_tokens: Maximum tokens in context
+            query: Search query
             
         Returns:
-            Formatted context string
+            String containing formatted context
         """
-        # Get semantic search results
-        search_results = self.search_memory(query, top_k=5)
-        
-        # Get important long-term memories
-        important_memories = self.get_important_memories(min_importance=0.7, limit=3)
-        
-        # Build context
-        context_parts = []
-        current_tokens = 0
-        
-        # Add search results
-        for result in search_results:
-            content = result.get('content', '')
-            tokens = len(content.split())
+        if not self.project:
+            raise ValueError("Project is required for context retrieval")
             
-            if current_tokens + tokens > max_tokens:
-                break
-            
-            context_parts.append(f"[Relevant Memory]\n{content}")
-            current_tokens += tokens
-        
-        # Add important memories
-        for memory in important_memories:
-            content = self._content_to_text(memory.get('content', {}))
-            tokens = len(content.split())
-            
-            if current_tokens + tokens > max_tokens:
-                break
-            
-            category = memory.get('category', 'general')
-            context_parts.append(f"[{category.upper()}]\n{content}")
-            current_tokens += tokens
-        
-        return "\n\n".join(context_parts)
+        search_service = self._get_search_service()
+        return search_service.get_context_for_query(
+            query=query,
+            project=self.project
+        )
     
     # ==================== Snapshots ====================
     
