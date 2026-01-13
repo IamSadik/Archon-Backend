@@ -59,7 +59,7 @@ class LLMService:
         
         # Use default model if none provided
         # Valid models: gemini-3-flash-preview, gemini-2.0-flash
-        model_name = 'gemini-2.5-flash-lite'
+        model_name = 'gemini-2.5-flash'
         
         return ChatGoogleGenerativeAI(
             model=model_name,

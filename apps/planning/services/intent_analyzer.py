@@ -332,11 +332,16 @@ Return JSON with:
     "reasoning": "brief explanation"
 }"""
 
+        # Fix: Handle None values safely when extracting active_feature
+        planning_context = context.get('planning', {})
+        active_feature_data = planning_context.get('active_feature') or {}
+        active_feature_name = active_feature_data.get('name', 'None')
+
         user_prompt = f"""Message: "{message}"
 
 Context:
 - Project: {self.project.name}
-- Active feature: {context.get('planning', {}).get('active_feature', {}).get('name', 'None')}
+- Active feature: {active_feature_name}
 
 Classify the intent and extract any entities."""
 
@@ -443,7 +448,7 @@ Classify the intent and extract any entities."""
         """Generate a suggested action based on intent."""
         intent = result.intent_type
         entities = result.entities
-        active = context.get('planning', {}).get('active_feature', {})
+        active = context.get('planning', {}).get('active_feature', {}) or {}
         
         action_templates = {
             IntentType.CREATE_FEATURE: "Create feature: {name}",

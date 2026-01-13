@@ -1,0 +1,15 @@
+# Activate virtualenv
+# Windows (PowerShell)
+
+\venv\Scripts\activate
+
+
+# Windows (cmd)
+
+.\venv\Scripts\activate.bat
+
+
+# Start project (choose appropriate command)
+# Django
+
+python manage.py runserver
